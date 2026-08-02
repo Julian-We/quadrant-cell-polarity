@@ -195,10 +195,7 @@ class CellSeries:
         figure_path = self.path / "figures"
         figure_path.mkdir(exist_ok=True, parents=True)
         plotlib.plot_time_series(
-            figure_path,
-            plot_images,
-            plot_measurements,
-            plot_masks,
+            figure_path, plot_images, plot_measurements, plot_masks, uid=str(self.uid)
         )
 
 

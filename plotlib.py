@@ -25,6 +25,7 @@ def plot_time_series(
     images: dict,
     measurements: pd.DataFrame,
     measuremnt_masks: dict,
+    uid: str = "cell_series",
 ):
     """
     params:
@@ -123,7 +124,57 @@ def plot_time_series(
     ax_plot4.set_ylabel("Q1 Normalized Intensity Difference")
     ax_plot4.axhline(0, color="black", linestyle="--", alpha=0.5)
 
+    fig.suptitle(f"{uid} - Quadrant Polarity analysis")
+
     plt.tight_layout()
     sns.despine()
     fig.savefig(path / "polarity_time_series.pdf", transparent=True)
     # plt.show()
+
+
+def plot_cell_measurements(
+    df: pd.DataFrame, path: str | Path, graph_size: tuple | list = (2, 1)
+):
+    features_to_plot = []
+    no_plot_cols = ["uid", "condition"]
+    for col in df.columns:
+        if col not in no_plot_cols and df[col].dtype not in [object, str]:
+            features_to_plot.append(col)
+
+    nrows = 1
+    ncols = len(features_to_plot)
+
+    height, width = graph_size
+
+    fig, axes = plt.subplots(nrows, ncols, figsize=(ncols * width, nrows * height))
+    for idx, feature in enumerate(features_to_plot):
+        sns.stripplot(
+            data=df,
+            y=feature,
+            x="condition",
+            hue="condition",
+            alpha=0.4,
+            size=3,
+            ax=axes[idx],
+        )
+        sns.pointplot(
+            data=df,
+            x="condition",
+            y=feature,
+            hue="condition",
+            # dodge=0.4,
+            errorbar="sd",  # standard error
+            estimator="mean",  # or "median"
+            capsize=0.075,
+            linestyle="none",
+            markersize=10,
+            marker="_",
+            err_kws=dict(linewidth=0.4, color="black"),
+            markeredgewidth=1,
+            palette="dark:black",
+            zorder=5,
+            ax=axes[idx],
+        )
+    plt.tight_layout()
+    sns.despine()
+    fig.savefig(path, transparent=True)
