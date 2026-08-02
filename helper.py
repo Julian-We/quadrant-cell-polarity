@@ -3,11 +3,27 @@ import scipy.ndimage as ndi
 from skimage.filters import gaussian
 from skimage.measure import regionprops, label
 import tifffile as tiff
+import hashlib
+import pandas as pd
+from pathlib import Path
 
 
 def get_centroid(mask):
     region = regionprops(label(mask))[0]
     return region.centroid
+
+
+def select_center_object(segmentation):
+    if isinstance(segmentation, np.ndarray):
+        labeled = label(segmentation)
+        regions = regionprops(labeled)
+        if len(regions) == 0:
+            return segmentation
+        center = np.array(segmentation.shape) // 2
+        distances = [np.linalg.norm(np.array(r.centroid) - center) for r in regions]
+        closest_region = regions[np.argmin(distances)]
+        selected_mask = (labeled == closest_region.label).astype(int)
+        return selected_mask
 
 
 def get_polarity(intensity_image, mask, sigma=5):
@@ -28,7 +44,10 @@ def get_polarity(intensity_image, mask, sigma=5):
     elif np.max(label_mask) == 0:
         return (None, None), None
     else:
-        raise ValueError("Mask should contain only one connected component.")
+        print(
+            "WARNING: Mask should contain only one connected component. Selecting the most center one"
+        )
+        label_mask = select_center_object(label_mask)
 
     controid = regionprops(label_mask)[0].centroid
     weighted_centroid = regionprops(label_mask, intensity_image=blurred_image)[
@@ -61,6 +80,10 @@ def generate_quadrant_mask(shape, centroid, v1, v2):
     return ((cross(v1, d) >= 0) & (cross(d, v2) >= 0)).astype(float)
 
 
+def get_angle_between_vectors(v1, v2):
+    return np.degrees(np.arctan2(np.cross(v1, v2), np.dot(v1, v2)))
+
+
 def get_ring_mask(cell_mask, thickness=2, pixel_size=1):
     """Calculates membrane mask from cell mask as a 'Ring'"""
     inside_dist = ndi.distance_transform_edt(cell_mask > 0) * pixel_size
@@ -81,3 +104,35 @@ def lsm_pixel_size(path):
         x, y = m["VoxelSizeX"] * 1e6, m["VoxelSizeY"] * 1e6
     assert abs(x - y) < 1e-9, f"non-square pixels: {x} != {y}"
     return x
+
+
+def time_clipper(image, index_start, index_end):
+    """Clip a 3D image along the time axis (axis=0)"""
+    if image.ndim != 3:
+        raise ValueError("Image must be 3D (time, height, width)")
+    return image[index_start:index_end]
+
+
+def get_unique_id(image):
+    sha_hash = hashlib.sha256()
+    if isinstance(image, str):
+        with open(image, "rb") as f:
+            for chunk in iter(lambda: f.read(4096), b""):
+                sha_hash.update(chunk)
+    elif isinstance(image, np.ndarray):
+        sha_hash.update(image.tobytes())
+    else:
+        raise ValueError("Input must be a file path or a numpy array.")
+    return sha_hash.hexdigest()[:8]
+
+
+def export_data(list_of_dicts, output_path: str | Path | None = None):
+    df = pd.DataFrame(list_of_dicts)
+    if output_path is not None:
+        df.to_csv(output_path, index=False)
+    return df
+
+
+def apply_gaussian_filter(image, sigma=1):
+    """Apply Gaussian blur to a 2D image."""
+    return gaussian(image, sigma=sigma)

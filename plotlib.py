@@ -1,0 +1,129 @@
+import matplotlib.pyplot as plt
+import pandas as pd
+import seaborn as sns
+from pathlib import Path
+import numpy as np
+
+sns.set_style("ticks")
+plt.rcParams.update(
+    {
+        "font.family": "Arial",
+        "font.size": 6,  # default text
+        "axes.titlesize": 8,  # subplot titles
+        "axes.labelsize": 6,  # x/y axis labels
+        "axes.labelweight": "bold",  # x/y axis labels
+        "xtick.labelsize": 6,  # x tick labels
+        "ytick.labelsize": 6,  # y tick labels
+        "legend.fontsize": 6,  # legend
+        "figure.titlesize": 8,  # suptitle
+    }
+)
+
+
+def plot_time_series(
+    path: str | Path,
+    images: dict,
+    measurements: pd.DataFrame,
+    measuremnt_masks: dict,
+):
+    """
+    params:
+    path: str | Path - path to save the figure
+    images: dict - dictionary of timepoint to image
+    measurements: pd.DataFrame - dataframe of measurements
+    measuremnt_masks: dict - dictionary of timepoint to measurement label images
+    """
+
+    if isinstance(path, str):
+        path = Path(path)
+    ncols = 6
+    nrows = 3
+
+    width = 1.5
+    height = 1.5
+
+    fig = plt.figure(figsize=(ncols * width, nrows * height))
+
+    gs = fig.add_gridspec(nrows, ncols)
+
+    # Establish the axes for the images and plots
+    ax_img0 = fig.add_subplot(gs[0, 0])
+    ax_img1 = fig.add_subplot(gs[0, 1])
+    ax_img2 = fig.add_subplot(gs[0, 2])
+    ax_img3 = fig.add_subplot(gs[0, 3])
+    ax_img4 = fig.add_subplot(gs[0, 4])
+    ax_img5 = fig.add_subplot(gs[0, 5])
+    axes = [ax_img0, ax_img1, ax_img2, ax_img3, ax_img4, ax_img5]
+
+    ax_plot1 = fig.add_subplot(gs[1, :3])
+    ax_plot2 = fig.add_subplot(gs[1, 3:])
+    ax_plot3 = fig.add_subplot(gs[2:, :3])
+    ax_plot4 = fig.add_subplot(gs[2:, 3:])
+
+    if len(images) != 6:
+        raise ValueError("The number of images must be 6.")
+
+    quadrant_colors = {
+        4: "magenta",
+        1: "cyan",
+        3: "green",
+        2: "yellow",
+    }
+
+    for idx, (timepoint, image) in enumerate(images.items()):
+        ax = axes[idx]
+        ax.imshow(image, cmap="gray")
+        ax.set_title(f"tp={timepoint}")
+
+        for quadrant_num in [2, 3, 4, 1]:
+            mask = measuremnt_masks[timepoint] == quadrant_num
+            ax.contour(mask, colors=quadrant_colors[quadrant_num], linewidths=0.5)
+
+        ax.axis("off")
+
+    polarity_magniude_max_idx = measurements["polarity_magnitude"].idxmax()
+    polarity_magnitude_max_timepoint = measurements.loc[
+        polarity_magniude_max_idx, "timepoint"
+    ]
+
+    ax_plot1.plot(
+        measurements["timepoint"], measurements["polarity_magnitude"], marker="o"
+    )
+    ax_plot1.axvline(
+        polarity_magnitude_max_timepoint, color="black", linestyle="--", alpha=0.5
+    )
+    ax_plot1.set_xlabel("Timepoint")
+    ax_plot1.set_ylabel("Polarity Magnitude")
+
+    ax_plot2.plot(
+        measurements["timepoint"],
+        measurements["polarity_angle_diff"],
+        marker="o",
+        color="purple",
+    )
+    ax_plot2.set_xlabel("Timepoint")
+    ax_plot2.set_ylabel("Polarity Angle Difference")
+
+    for q in ["Q1", "Q2", "Q3", "Q4"]:
+        measurements[f"{q}_norm"] = measurements[f"{q}_sum"] / measurements["Total_sum"]
+        measurements[f"{q}_norm"] = measurements[f"{q}_norm"].fillna(0)
+
+    ax_plot3.plot(
+        measurements["timepoint"], measurements["Q1_norm"], marker="o", color="orange"
+    )
+    ax_plot3.set_xlabel("Timepoint")
+    ax_plot3.set_ylabel("Normalized Q1 Intensity")
+
+    # Plot Q1 difference between timepoints
+    measurements["Q1_diff"] = measurements["Q1_norm"].diff().fillna(0)
+    ax_plot4.plot(
+        measurements["timepoint"], measurements["Q1_diff"], marker="o", color="brown"
+    )
+    ax_plot4.set_xlabel("Timepoint")
+    ax_plot4.set_ylabel("Q1 Normalized Intensity Difference")
+    ax_plot4.axhline(0, color="black", linestyle="--", alpha=0.5)
+
+    plt.tight_layout()
+    sns.despine()
+    fig.savefig(path / "polarity_time_series.pdf", transparent=True)
+    # plt.show()
