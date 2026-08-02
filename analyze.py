@@ -63,9 +63,10 @@ for cell_folder in cell_folders:
         if condition_candidate.lower().strip() in cell_folder.name.lower():
             condition = condition_candidate.strip()
 
-    if condition is None:
-        print(f"Warning: No condition found for folder {cell_folder.name}")
+    if condition is None and condition_list == []:
         condition = "cremig"
+    elif condition is None and condition_list != []:
+        print(f"Warning: No condition found for folder {cell_folder.name}")
 
     cell_series = CellSeries(
         path=cell_folder,

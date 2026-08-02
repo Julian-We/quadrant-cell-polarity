@@ -109,6 +109,11 @@ class CellSeries:
 
         self.quadrant_processing(rim_thickness=outer_ring_thickness)
 
+        if not self.check_mask_consistency():
+            print(
+                f"WARNING: Masks for cell {self.uid} are not consistent across timepoints. Check the mask file: {mask_path}"
+            )
+
     def get_max_polarity_timepoint(self):
         """Return the timepoint with the maximum polarity magnitude"""
         max_polarity = -np.inf
@@ -153,6 +158,9 @@ class CellSeries:
                 )
             timepoint.measure(func=np.sum, sigma=sigma)
             self.measurements.append(timepoint.measurements)
+
+    def check_mask_consistency(self):
+        return hlp.mask_checker([tp.mask for tp in self.timepoints])
 
     def get_data(self, as_dict=False, path: Path | str | None = None):
         """Get data of all timpoints as list of dictionarties or as pandas dataframe"""

@@ -136,3 +136,18 @@ def export_data(list_of_dicts, output_path: str | Path | None = None):
 def apply_gaussian_filter(image, sigma=1):
     """Apply Gaussian blur to a 2D image."""
     return gaussian(image, sigma=sigma)
+
+
+def mask_checker(list_of_masks):
+    """Checks is all masks/segmentation are roughly the same size and shape. Returns True if they are, False otherwise."""
+    mask_areas = [np.sum(mask.astype(bool)) for mask in list_of_masks]
+    median_area = np.median(mask_areas)
+    max_deviation = 1.5 * median_area  # Allow 50% deviation
+    biggest_mask = np.argmax(mask_areas)
+    if biggest_mask is not None and mask_areas[biggest_mask] > max_deviation:
+        print(
+            f"WARNING: Mask {biggest_mask} is significantly larger than the median area ({mask_areas[biggest_mask]} vs {median_area}; {mask_areas[biggest_mask] / mask_areas}x)."
+        )
+        return False
+    else:
+        return True
