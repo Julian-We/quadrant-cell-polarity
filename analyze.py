@@ -3,6 +3,8 @@ from cell import CellSeries
 import argparse
 import pandas as pd
 from plotlib import plot_cell_measurements
+from tkinter import Tk
+from tkinter.filedialog import askdirectory
 
 parser = argparse.ArgumentParser(description="Analyze cell time series data")
 parser.add_argument(
@@ -25,7 +27,24 @@ print(f"Conditions: {condition_list}")
 if args.data_dir is not None:
     root = Path(args.data_dir)
 else:
-    root = Path(__file__).parent / "data"
+    tk_root = Tk()
+    tk_root.withdraw()
+    selected_dir = askdirectory(
+        title="Select the data directory containing cell folders",
+        initialdir=str(Path.cwd()),
+    )
+    tk_root.destroy()
+    file_data_dir = Path(__file__).parent / "data"
+    if not selected_dir and file_data_dir.exists():
+        print(
+            "WARNING: No data directory selected. Using the 'data' directory in the script folder."
+        )
+        selected_dir = str(file_data_dir)
+    elif not selected_dir and not file_data_dir.exists():
+        raise FileNotFoundError(
+            "No data directory selected. And data dirctory does not exist in the script folder."
+        )
+    root = Path(selected_dir)
 
 output_dir = root.parent / "output"
 output_dir.mkdir(exist_ok=True)
@@ -39,9 +58,14 @@ cell_folders = [p for p in root.iterdir() if p.is_dir() and not p.name.startswit
 cell_measurements = []
 for cell_folder in cell_folders:
     condition = None
+
     for condition_candidate in condition_list:
         if condition_candidate.lower().strip() in cell_folder.name.lower():
             condition = condition_candidate.strip()
+
+    if condition is None:
+        print(f"Warning: No condition found for folder {cell_folder.name}")
+        condition = "cremig"
 
     cell_series = CellSeries(
         path=cell_folder,
