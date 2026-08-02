@@ -15,6 +15,7 @@ class CellSeries:
         pixel_size: float = 1.0,
         outer_ring_thickness: float | None = None,
         quadrant_method: str = "max",  # 'max' or 'adaptive'
+        output_dir: Path | str | None = None,
     ):
         """A series of CellTimepoints for a single cell across timepoints in a movie"""
 
@@ -24,6 +25,9 @@ class CellSeries:
         self.uid = None
         self.condition = condition
         self.path = path
+        self.output_dir = (
+            Path(output_dir) if isinstance(output_dir, str) else output_dir
+        )
 
         self.image = None
         self.mask = None
@@ -192,7 +196,10 @@ class CellSeries:
             plot_images[plot_tp] = self.timepoints[plot_tp].image
             plot_masks[plot_tp] = self.timepoints[plot_tp].get_quadrant_label_image()
 
-        figure_path = self.path / "figures"
+        if self.output_dir is not None:
+            figure_path = self.output_dir / "quadrant_analysis_plots"
+        else:
+            figure_path = self.path / "figures"
         figure_path.mkdir(exist_ok=True, parents=True)
         plotlib.plot_time_series(
             figure_path, plot_images, plot_measurements, plot_masks, uid=str(self.uid)

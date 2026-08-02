@@ -128,7 +128,7 @@ def plot_time_series(
 
     plt.tight_layout()
     sns.despine()
-    fig.savefig(path / "polarity_time_series.pdf", transparent=True)
+    fig.savefig(path / f"{uid}__polarity_time_series.pdf", transparent=True)
     # plt.show()
 
 

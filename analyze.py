@@ -5,32 +5,30 @@ import pandas as pd
 from plotlib import plot_cell_measurements
 
 parser = argparse.ArgumentParser(description="Analyze cell time series data")
-
-root = parser.add_argument(
+parser.add_argument(
     "--data_dir",
     type=str,
     default=None,
     help="Path to the directory containing cell data folders",
 )
-condition_list_str = parser.add_argument(
+parser.add_argument(
     "--conditions",
     type=str,
     default="",
     help="Comma-separated list of conditions corresponding to each cell folder",
 )
+args = parser.parse_args()
 
+condition_list = [c.strip() for c in args.conditions.split(",") if c.strip()]
+print(f"Conditions: {condition_list}")
 
-condition_list_str = (
-    condition_list_str
-    if isinstance(condition_list_str, str)
-    else condition_list_str.default
-)
-condition_list = condition_list_str.split(",")
-
-if isinstance(root, str):
-    root = Path(root)
+if args.data_dir is not None:
+    root = Path(args.data_dir)
 else:
     root = Path(__file__).parent / "data"
+
+output_dir = root.parent / "output"
+output_dir.mkdir(exist_ok=True)
 
 if not root.exists():
     raise FileNotFoundError(f"Data directory {root} does not exist.")
@@ -45,12 +43,16 @@ for cell_folder in cell_folders:
         if condition_candidate.lower().strip() in cell_folder.name.lower():
             condition = condition_candidate.strip()
 
-    cell_series = CellSeries(path=cell_folder, pixel_size=6.5 / 63, condition=condition)
+    cell_series = CellSeries(
+        path=cell_folder,
+        pixel_size=6.5 / 63,
+        condition=condition,
+        output_dir=output_dir,
+    )
     cell_series.plot()
     cell_measurements.append(cell_series.get_cell_measurements())
 
 
 df = pd.DataFrame(cell_measurements)
-cell_figure_path = root.parent / "figures"
-cell_figure_path.mkdir(exist_ok=True)
-plot_cell_measurements(df, cell_figure_path / "cell_measurements.pdf")
+df.to_csv(output_dir / "cell_measurements.csv", index=False)
+plot_cell_measurements(df, output_dir / "cell_measurements.pdf", graph_size=(2, 1.6))
