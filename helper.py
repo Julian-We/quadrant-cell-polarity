@@ -80,8 +80,12 @@ def generate_quadrant_mask(shape, centroid, v1, v2):
     return ((cross(v1, d) >= 0) & (cross(d, v2) >= 0)).astype(float)
 
 
+def cross_product(v1, v2):
+    return v1[0] * v2[1] - v1[1] * v2[0]
+
+
 def get_angle_between_vectors(v1, v2):
-    return np.degrees(np.arctan2(np.cross(v1, v2), np.dot(v1, v2)))
+    return np.degrees(np.arctan2(cross_product(v1, v2), np.dot(v1, v2)))
 
 
 def get_ring_mask(cell_mask, thickness=2, pixel_size=1):
