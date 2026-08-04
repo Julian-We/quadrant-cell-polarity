@@ -21,6 +21,12 @@ parser.add_argument(
 )
 args = parser.parse_args()
 
+#### Setting parameters
+polarity_threshold = 0.275
+polarity_feature = "Q1_norm"
+normalize_area = "Total"  # or "Center"
+backtrack_frame_cutoff = 4  # when backtracking, has to be at least
+
 condition_list = [c.strip() for c in args.conditions.split(",") if c.strip()]
 print(f"Conditions: {condition_list}")
 
@@ -73,8 +79,9 @@ for cell_folder in cell_folders:
         pixel_size=6.5 / 63,
         condition=condition,
         output_dir=output_dir,
+        quadrant_method="adaptive",
     )
-    cell_series.plot()
+    cell_series.plot(smoothing_method="savgol", polyorder=4)
     cell_measurements.append(cell_series.get_cell_measurements())
 
 

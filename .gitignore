@@ -3,3 +3,5 @@ graveyard
 .DS_Store
 data
 
+proto.py
+__marimo__/session

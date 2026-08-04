@@ -4,6 +4,8 @@ import seaborn as sns
 from pathlib import Path
 import numpy as np
 
+from smoothing import smooth_curve
+
 sns.set_style("ticks")
 plt.rcParams.update(
     {
@@ -26,6 +28,8 @@ def plot_time_series(
     measurements: pd.DataFrame,
     measuremnt_masks: dict,
     uid: str = "cell_series",
+    smoothing_method: str | None = "savgol",
+    **kwargs,
 ):
     """
     params:
@@ -33,6 +37,7 @@ def plot_time_series(
     images: dict - dictionary of timepoint to image
     measurements: pd.DataFrame - dataframe of measurements
     measuremnt_masks: dict - dictionary of timepoint to measurement label images
+    smoothing_method: str | None - "savgol", "spline", or None to disable smoothing overlay
     """
 
     if isinstance(path, str):
@@ -110,13 +115,38 @@ def plot_time_series(
         measurements[f"{q}_norm"] = measurements[f"{q}_norm"].fillna(0)
 
     ax_plot3.plot(
-        measurements["timepoint"], measurements["Q1_norm"], marker="o", color="orange"
+        measurements["timepoint"],
+        measurements["Q1_norm"],
+        marker="o",
+        color="orange",
+        alpha=0.35,
+        label="raw",
     )
+
+    if smoothing_method is not None:
+        measurements["Q1_norm_smooth"] = smooth_curve(
+            measurements["timepoint"],
+            measurements["Q1_norm"],
+            method=smoothing_method,
+            **kwargs,
+        )
+        ax_plot3.plot(
+            measurements["timepoint"],
+            measurements["Q1_norm_smooth"],
+            color="orange",
+            linewidth=1.5,
+            label="smoothed",
+        )
+        ax_plot3.legend()
+        q1_diff_source = measurements["Q1_norm_smooth"]
+    else:
+        q1_diff_source = measurements["Q1_norm"]
+
     ax_plot3.set_xlabel("Timepoint")
     ax_plot3.set_ylabel("Normalized Q1 Intensity")
 
-    # Plot Q1 difference between timepoints
-    measurements["Q1_diff"] = measurements["Q1_norm"].diff().fillna(0)
+    # Plot Q1 difference between timepoints (from the smoothed curve when available)
+    measurements["Q1_diff"] = q1_diff_source.diff().fillna(0)
     ax_plot4.plot(
         measurements["timepoint"], measurements["Q1_diff"], marker="o", color="brown"
     )

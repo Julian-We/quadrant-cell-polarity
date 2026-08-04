@@ -1,8 +1,12 @@
 import datetime
+from typing import Type
 import numpy as np
 from pathlib import Path
+from smoothing import savgol_smooth
 import helper as hlp
 import plotlib
+import calculator as calc
+import pandas as pd
 
 
 class CellSeries:
@@ -15,6 +19,7 @@ class CellSeries:
         pixel_size: float = 1.0,
         outer_ring_thickness: float | None = None,
         quadrant_method: str = "max",  # 'max' or 'adaptive'
+        normalization_area: str = "Total",  # 'Total', Center' or Q2-Q4
         output_dir: Path | str | None = None,
     ):
         """A series of CellTimepoints for a single cell across timepoints in a movie"""
@@ -34,11 +39,13 @@ class CellSeries:
 
         self.timepoints = []
         self.measurements = []
+        self.df = pd.DataFrame()
         self.cell_measurements = {}
 
         self.max_polarity_vector = (None, None)
 
         self.quadrant_method = quadrant_method
+        self.normalization_area = normalization_area
 
         mask_path = [p for p in path.glob("*.tif") if "mask" in p.name.lower()][0]
         image_path = [p for p in path.glob("*.tif") if "mask" not in p.name.lower()][0]
@@ -108,11 +115,53 @@ class CellSeries:
             )
 
         self.quadrant_processing(rim_thickness=outer_ring_thickness)
+        self.df = pd.DataFrame(self.measurements)
+        self.polarity_analysis()
 
         if not self.check_mask_consistency():
             print(
                 f"WARNING: Masks for cell {self.uid} are not consistent across timepoints. Check the mask file: {mask_path}"
             )
+
+    def polarity_analysis(
+        self,
+        time_resolution: float = 1.0,
+        polarity_column: str = "Q1_norm_smooth",
+        polarity_threshold: float = 0.275,
+        min_phase_length: int = 4,
+        stalling_sigma: float = 0.5,
+        savgol_polyorder: int = 4,
+        savgol_window_length: int | None = None,
+    ):
+
+        self.df["time"] = self.df["timepoint"] * time_resolution
+
+        # Smooth and diff Q1_norm
+        self.df["Q1_norm_smooth"] = savgol_smooth(
+            self.df["Q1_norm"],
+            window_length=savgol_window_length,
+            polyorder=savgol_polyorder,
+        )
+        self.df["Q1_norm_smooth_diff"] = self.df["Q1_norm_smooth"].diff()
+
+        # Smooth and diff polarity magnitude
+        self.df["polarity_magnitude_smooth"] = savgol_smooth(
+            self.df["polarity_magnitude"],
+            window_length=savgol_window_length,
+            polyorder=savgol_polyorder,
+        )
+        self.df["polarity_magnitude_smooth_diff"] = self.df[
+            "polarity_magnitude_smooth"
+        ].diff()
+
+        calc.get_polarization_phases(self.df, polarity_column, min_phase_length)
+        calc.get_stalling_phases(
+            self.df, polarity_column, min_phase_length, stalling_sigma
+        )
+        calc.get_local_extrems(self.df, polarity_column)
+        calc.get_above_polar_threshold(
+            self.df, polarity_column, min_phase_length, polarity_threshold
+        )
 
     def get_max_polarity_timepoint(self):
         """Return the timepoint with the maximum polarity magnitude"""
@@ -134,18 +183,33 @@ class CellSeries:
         else:
             self.max_polarity_vector = max_timepoint.polarity_unit_vector
 
-    def quadrant_processing(self, rim_thickness=None, sigma: float | None = None):
+    def quadrant_processing(
+        self,
+        rim_thickness=None,
+        sigma: float | None = None,
+        measurement_function: str = "sum",
+    ):
         """Process all timepoints to get quadrant masks and measurements"""
         self.get_max_polarity_timepoint()
         for idx, timepoint in enumerate(self.timepoints):
-            if not idx == 0:
-                timepoint.measurements["polarity_angle_diff"] = (
-                    hlp.get_angle_between_vectors(
-                        timepoint.polarity_unit_vector,
-                        self.timepoints[idx - 1].polarity_unit_vector,
+            if isinstance(measurement_function, str):
+                if measurement_function.lower() == "sum":
+                    func = np.sum
+                elif measurement_function.lower() == "mean":
+                    func = np.mean
+                elif measurement_function.lower() == "std":
+                    func = np.std
+                else:
+                    print(
+                        f"WARNING measurement_function <{measurement_function}> is not known, using np.sum instead. please supply function"
                     )
+                    func = np.sum
+            elif isinstance(measurement_function, type(np.sum)):
+                func = measurement_function
+            else:
+                raise TypeError(
+                    f"measurement_function of type {type(measurement_function)} is not supported"
                 )
-            # timepoint.get_quadrants_masks(unit_vector=self.max_polarity_vector)
             if self.quadrant_method == "max":
                 timepoint.set_measurement_masks(
                     rim_thickness=rim_thickness, unit_vector=self.max_polarity_vector
@@ -156,7 +220,22 @@ class CellSeries:
                 raise ValueError(
                     f"{self.quadrant_method} is not a valid quadrant method. Use 'max' or 'adaptive'."
                 )
-            timepoint.measure(func=np.sum, sigma=sigma)
+
+            timepoint.measure(func=func, sigma=sigma)
+
+            # Get differential measurements
+            if not idx == 0:
+                timepoint.measurements["polarity_angle_diff"] = (
+                    hlp.get_angle_between_vectors(
+                        timepoint.polarity_unit_vector,
+                        self.timepoints[idx - 1].polarity_unit_vector,
+                    )
+                )
+                timepoint.measurements["Q1_norm_diff"] = (
+                    timepoint.measurements["Q1_norm"]
+                    - self.timepoints[idx - 1].measurements["Q1_norm"]
+                )
+
             self.measurements.append(timepoint.measurements)
 
     def check_mask_consistency(self):
@@ -173,7 +252,6 @@ class CellSeries:
 
     def get_cell_measurements(self):
         df = self.get_data(as_dict=False)
-        df["Q1_norm"] = df["Q1_sum"] / df["Total_sum"]
         self.cell_measurements.update(
             {
                 "uid": self.uid,
@@ -194,7 +272,7 @@ class CellSeries:
         )
         return self.cell_measurements
 
-    def plot(self):
+    def plot(self, smoothing_method: str | None = "savgol", **kwargs):
         # Equispaced timepoints for plotting including first and last timepoint
         plot_timepoints = np.linspace(0, len(self.timepoints) - 1, 6, dtype=int)
         plot_images = {}
@@ -210,7 +288,13 @@ class CellSeries:
             figure_path = self.path / "figures"
         figure_path.mkdir(exist_ok=True, parents=True)
         plotlib.plot_time_series(
-            figure_path, plot_images, plot_measurements, plot_masks, uid=str(self.uid)
+            figure_path,
+            plot_images,
+            plot_measurements,
+            plot_masks,
+            uid=str(self.uid),
+            smoothing_method=smoothing_method,
+            **kwargs,
         )
 
 
@@ -223,9 +307,18 @@ class CellTimepoint:
         mask,
         pixel_size=1.0,
         condition: str = "cremig",
+        center_savety_distance=2,
         **kwargs,
     ):
-        """Image and conneced segmentation and features  for a timpoint in a movie"""
+        """Image and conneced segmentation and features  for a timpoint in a movie
+        timepoint_id: timepoint id (frame) of the timpoint
+        cell_id: ID of cell (blinded number)
+        image: Intensity image for polarity and measurement (actin)
+        mask: binary mask that segments the cell
+        pixel_size: size of a pixel in micrometer
+        condition: Assignment of a condition (control vs. treatment)
+        center_savety_distance: for center normalization thickness of the subtracted ring
+        """
 
         # Context info
         self.cell_id = cell_id
@@ -242,9 +335,11 @@ class CellTimepoint:
         self.polarity_unit_vector = (None, None)
         self.polarity_magnitude = None
 
+        self.center_savety_distance = center_savety_distance
+
         # Quadrant masks: Q1=front, Q2=counter clockwise side, Q3=clockwise side, Q4=back
         self.quadrant_masks = {"Q1": None, "Q2": None, "Q3": None, "Q4": None}
-        self.measuremnt_masks = {
+        self.measurement_masks = {
             "Q1": None,
             "Q2": None,
             "Q3": None,
@@ -326,7 +421,7 @@ class CellTimepoint:
         # Generate a labnel image for the quadrants
         canvas = np.zeros(self.mask.shape, dtype=np.uint8)
         for q_num in [1, 2, 3, 4]:
-            q_mask = self.measuremnt_masks[f"Q{q_num}"]
+            q_mask = self.measurement_masks[f"Q{q_num}"]
             canvas[q_mask > 0] = q_num
         return canvas
 
@@ -337,10 +432,10 @@ class CellTimepoint:
         if ax is None:
             fig, ax = plt.subplots()
 
-        ax.contour(self.measuremnt_masks["Q1"], colors="cyan")
-        ax.contour(self.measuremnt_masks["Q2"], colors="magenta")
-        ax.contour(self.measuremnt_masks["Q3"], colors="yellow")
-        ax.contour(self.measuremnt_masks["Q4"], colors="green")
+        ax.contour(self.measurement_masks["Q1"], colors="cyan")
+        ax.contour(self.measurement_masks["Q2"], colors="magenta")
+        ax.contour(self.measurement_masks["Q3"], colors="yellow")
+        ax.contour(self.measurement_masks["Q4"], colors="green")
 
     def set_measurement_masks(self, rim_thickness=3.0, unit_vector=None):
         self.get_quadrants_masks(unit_vector=unit_vector)
@@ -350,21 +445,32 @@ class CellTimepoint:
                 self.mask, thickness=rim_thickness, pixel_size=self.pixel_size
             )
 
-        self.measuremnt_masks["Total"] = main_measurement_mask
+        self.measurement_masks["Total"] = main_measurement_mask
+        self.measurement_masks["Center"] = hlp.get_center_mask(
+            self.mask, self.center_savety_distance, pixel_size=self.pixel_size
+        )
 
         for q in ["Q1", "Q2", "Q3", "Q4"]:
-            self.measuremnt_masks[q] = (
+            self.measurement_masks[q] = (
                 main_measurement_mask * self.quadrant_masks[q]
             ).astype(bool)
 
-    def measure(self, func, sigma: float | None = None):
+    def measure(self, func, sigma: float | None = None, normalization_area="Total"):
         if func is None:
-            func = np.mean
+            func = np.sum
 
         if sigma is not None:
             image = hlp.apply_gaussian_filter(self.image, sigma=sigma)
         else:
             image = self.image.copy()
         func_name = str(func.__name__) if hasattr(func, "__name__") else str(func)
-        for area, mask in self.measuremnt_masks.items():
+        for area, mask in self.measurement_masks.items():
             self.measurements[f"{area}_{func_name}"] = func(image[mask.astype(bool)])
+        if normalization_area not in self.measurement_masks.keys():
+            raise KeyError(
+                f"{normalization_area} not found in measurement areas. Select from {self.measurement_masks.keys()}"
+            )
+        self.measurements["Q1_norm"] = (
+            self.measurements[f"Q1_{func_name}"]
+            / self.measurements[f"{normalization_area}_{func_name}"]
+        )

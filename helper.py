@@ -13,6 +13,10 @@ def get_centroid(mask):
     return region.centroid
 
 
+def get_center_mask(mask, thickness, pixel_size=6.5 / 63):
+    return (ndi.distance_transform_edt(mask) * pixel_size) >= thickness
+
+
 def select_center_object(segmentation):
     if isinstance(segmentation, np.ndarray):
         labeled = label(segmentation)
