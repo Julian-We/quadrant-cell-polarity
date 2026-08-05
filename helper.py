@@ -154,7 +154,7 @@ def mask_checker(list_of_masks):
     biggest_mask = np.argmax(mask_areas)
     if biggest_mask is not None and mask_areas[biggest_mask] > max_deviation:
         print(
-            f"WARNING: Mask {biggest_mask} is significantly larger than the median area ({mask_areas[biggest_mask]} vs {median_area}; {mask_areas[biggest_mask] / mask_areas}x)."
+            f"WARNING: Mask {biggest_mask} is significantly larger than the median area ({mask_areas[biggest_mask]} vs {median_area}; {mask_areas[biggest_mask] / median_area}x)."
         )
         return False
     else:
