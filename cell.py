@@ -20,6 +20,7 @@ class CellSeries:
         outer_ring_thickness: float | None = None,
         quadrant_method: str = "max",  # 'max' or 'adaptive'
         normalization_area: str = "Total",  # 'Total', Center' or Q2-Q4
+        polarity_column: str = "Q1_norm_smooth",
         output_dir: Path | str | None = None,
     ):
         """A series of CellTimepoints for a single cell across timepoints in a movie"""
@@ -40,12 +41,16 @@ class CellSeries:
         self.timepoints = []
         self.measurements = []
         self.df = pd.DataFrame()
-        self.cell_measurements = {}
+        self.cell_measurements = {
+            "uid": self.uid,
+            "condition": self.condition,
+        }
 
         self.max_polarity_vector = (None, None)
 
         self.quadrant_method = quadrant_method
         self.normalization_area = normalization_area
+        self.polarity_column = polarity_column
 
         mask_path = [p for p in path.glob("*.tif") if "mask" in p.name.lower()][0]
         image_path = [p for p in path.glob("*.tif") if "mask" not in p.name.lower()][0]
@@ -154,13 +159,43 @@ class CellSeries:
             "polarity_magnitude_smooth"
         ].diff()
 
+        # Get polarizing phases and measurements
         calc.get_polarization_phases(self.df, polarity_column, min_phase_length)
+        phases_polarizing = calc.true_phases(self.df, "polarizing", polarity_column)
+        self.cell_measurements.update(
+            calc.quantify_phases(phases_polarizing, "polarizing")
+        )
+
+        # Get stalling phases and measurements
         calc.get_stalling_phases(
             self.df, polarity_column, min_phase_length, stalling_sigma
         )
+        phases_stalling = calc.true_phases(self.df, "stalling", polarity_column)
+        self.cell_measurements.update(calc.quantify_phases(phases_stalling, "stalling"))
+
+        # Get local extrema and above threshold phases and measurements
         calc.get_local_extrems(self.df, polarity_column)
         calc.get_above_polar_threshold(
             self.df, polarity_column, min_phase_length, polarity_threshold
+        )
+
+        ramp_on_phases = calc.get_time_since_local_min_to_polar(
+            self.df, polarity_column
+        )
+        self.cell_measurements.update(
+            {
+                "min_to_polar_ramp_on_mean": ramp_on_phases["n_timepoints"].mean(),
+            }
+        )
+
+        polarity_angle_diff_apolar = self.df[self.df["polar"] == False][
+            "polarity_angle_diff"
+        ]
+        self.cell_measurements.update(
+            {
+                "apolar_polarity_angle_diff_mean": polarity_angle_diff_apolar.mean(),
+                "apolar_polarity_angle_diff_std": polarity_angle_diff_apolar.std(),
+            }
         )
 
     def get_max_polarity_timepoint(self):
@@ -251,7 +286,7 @@ class CellSeries:
             return hlp.export_data(self.measurements, output_path=path)
 
     def get_cell_measurements(self):
-        df = self.get_data(as_dict=False)
+        df = self.df
         self.cell_measurements.update(
             {
                 "uid": self.uid,
@@ -272,12 +307,11 @@ class CellSeries:
         )
         return self.cell_measurements
 
-    def plot(self, smoothing_method: str | None = "savgol", **kwargs):
+    def plot(self, **kwargs):
         # Equispaced timepoints for plotting including first and last timepoint
         plot_timepoints = np.linspace(0, len(self.timepoints) - 1, 6, dtype=int)
         plot_images = {}
         plot_masks = {}
-        plot_measurements = hlp.export_data(self.measurements)
         for plot_tp in plot_timepoints:
             plot_images[plot_tp] = self.timepoints[plot_tp].image
             plot_masks[plot_tp] = self.timepoints[plot_tp].get_quadrant_label_image()
@@ -290,10 +324,10 @@ class CellSeries:
         plotlib.plot_time_series(
             figure_path,
             plot_images,
-            plot_measurements,
+            self.df,
             plot_masks,
             uid=str(self.uid),
-            smoothing_method=smoothing_method,
+            polarity_column=self.polarity_column,
             **kwargs,
         )
 

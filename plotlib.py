@@ -3,6 +3,7 @@ import pandas as pd
 import seaborn as sns
 from pathlib import Path
 import numpy as np
+from calculator import true_phases
 
 from smoothing import smooth_curve
 
@@ -22,13 +23,21 @@ plt.rcParams.update(
 )
 
 
+def fill_true(df, column, ax, color="red", alpha=0.2, phases=None):
+    if phases is None:
+        phases = true_phases(df, column)
+    for xs, xe in zip(phases["x_start"], phases["x_end"]):
+        ax.axvspan(xs, xe, color=color, alpha=alpha)
+    return phases
+
+
 def plot_time_series(
     path: str | Path,
     images: dict,
     measurements: pd.DataFrame,
     measuremnt_masks: dict,
     uid: str = "cell_series",
-    smoothing_method: str | None = "savgol",
+    polarity_column: str = "Q1_norm_smooth",
     **kwargs,
 ):
     """
@@ -87,72 +96,60 @@ def plot_time_series(
 
         ax.axis("off")
 
-    polarity_magniude_max_idx = measurements["polarity_magnitude"].idxmax()
-    polarity_magnitude_max_timepoint = measurements.loc[
-        polarity_magniude_max_idx, "timepoint"
-    ]
-
     ax_plot1.plot(
-        measurements["timepoint"], measurements["polarity_magnitude"], marker="o"
+        measurements["timepoint"],
+        measurements["polarity_magnitude"],
+        marker="o",
+        markersize=2,
+        alpha=0.5,
     )
-    ax_plot1.axvline(
-        polarity_magnitude_max_timepoint, color="black", linestyle="--", alpha=0.5
-    )
+    ax_plot1.plot(measurements["timepoint"], measurements["polarity_magnitude_smooth"])
+    ax_plot1.set_title("Polarity Magnitude")
     ax_plot1.set_xlabel("Timepoint")
-    ax_plot1.set_ylabel("Polarity Magnitude")
 
     ax_plot2.plot(
         measurements["timepoint"],
         measurements["polarity_angle_diff"],
         marker="o",
-        color="purple",
+        markersize=2,
     )
+    ax_plot2.set_title("Polarity Angle Diff")
     ax_plot2.set_xlabel("Timepoint")
-    ax_plot2.set_ylabel("Polarity Angle Difference")
+    ax_plot2.axhline(0, color="black", linestyle="--", linewidth=0.5)
 
-    for q in ["Q1", "Q2", "Q3", "Q4"]:
-        measurements[f"{q}_norm"] = measurements[f"{q}_sum"] / measurements["Total_sum"]
-        measurements[f"{q}_norm"] = measurements[f"{q}_norm"].fillna(0)
+    if "smooth" in polarity_column:
+        pc = polarity_column.replace("_smooth", "")
+        pc_smooth = polarity_column
+    else:
+        pc = polarity_column
+        pc_smooth = f"{polarity_column}_smooth"
 
     ax_plot3.plot(
         measurements["timepoint"],
-        measurements["Q1_norm"],
+        measurements[pc],
         marker="o",
-        color="orange",
-        alpha=0.35,
-        label="raw",
+        markersize=2,
+        alpha=0.5,
     )
+    ax_plot3.plot(
+        measurements["timepoint"],
+        measurements[pc_smooth],
+    )
+    fill_true(measurements, "polar", ax_plot3, color="red", alpha=0.2)
 
-    if smoothing_method is not None:
-        measurements["Q1_norm_smooth"] = smooth_curve(
-            measurements["timepoint"],
-            measurements["Q1_norm"],
-            method=smoothing_method,
-            **kwargs,
-        )
-        ax_plot3.plot(
-            measurements["timepoint"],
-            measurements["Q1_norm_smooth"],
-            color="orange",
-            linewidth=1.5,
-            label="smoothed",
-        )
-        ax_plot3.legend()
-        q1_diff_source = measurements["Q1_norm_smooth"]
-    else:
-        q1_diff_source = measurements["Q1_norm"]
-
-    ax_plot3.set_xlabel("Timepoint")
-    ax_plot3.set_ylabel("Normalized Q1 Intensity")
-
-    # Plot Q1 difference between timepoints (from the smoothed curve when available)
-    measurements["Q1_diff"] = q1_diff_source.diff().fillna(0)
     ax_plot4.plot(
-        measurements["timepoint"], measurements["Q1_diff"], marker="o", color="brown"
+        measurements["timepoint"],
+        measurements[pc],
+        marker="o",
+        markersize=2,
+        alpha=0.5,
     )
-    ax_plot4.set_xlabel("Timepoint")
-    ax_plot4.set_ylabel("Q1 Normalized Intensity Difference")
-    ax_plot4.axhline(0, color="black", linestyle="--", alpha=0.5)
+    ax_plot4.plot(
+        measurements["timepoint"],
+        measurements[pc_smooth],
+    )
+    fill_true(measurements, "polarizing", ax_plot4, color="red", alpha=0.2)
+    fill_true(measurements, "stalling", ax_plot4, color="blue", alpha=0.2)
 
     fig.suptitle(f"{uid} - Quadrant Polarity analysis")
 
