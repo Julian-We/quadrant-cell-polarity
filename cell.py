@@ -22,6 +22,12 @@ class CellSeries:
         normalization_area: str = "Total",  # 'Total', Center' or Q2-Q4
         polarity_column: str = "Q1_norm_smooth",
         output_dir: Path | str | None = None,
+        time_resolution: float = 1.0,
+        polarity_threshold: float = 0.275,
+        min_phase_length: int = 4,
+        stalling_sigma: float = 0.5,
+        savgol_polyorder: int = 4,
+        savgol_window_length: int | None = None,
     ):
         """A series of CellTimepoints for a single cell across timepoints in a movie"""
 
@@ -52,6 +58,12 @@ class CellSeries:
         self.quadrant_method = quadrant_method
         self.normalization_area = normalization_area
         self.polarity_column = polarity_column
+        self.time_resolution = time_resolution
+        self.polarity_threshold = polarity_threshold
+        self.min_phase_length = min_phase_length
+        self.stalling_sigma = stalling_sigma
+        self.savgol_polyorder = savgol_polyorder
+        self.savgol_window_length = savgol_window_length
 
         mask_path = [p for p in path.glob("*.tif") if "mask" in p.name.lower()][0]
         image_path = [p for p in path.glob("*.tif") if "mask" not in p.name.lower()][0]
@@ -129,59 +141,54 @@ class CellSeries:
                 f"WARNING: Masks for cell {self.uid} are not consistent across timepoints. Check the mask file: {mask_path}"
             )
 
-    def polarity_analysis(
-        self,
-        time_resolution: float = 1.0,
-        polarity_column: str = "Q1_norm_smooth",
-        polarity_threshold: float = 0.275,
-        min_phase_length: int = 4,
-        stalling_sigma: float = 0.5,
-        savgol_polyorder: int = 4,
-        savgol_window_length: int | None = None,
-    ):
+    def polarity_analysis(self):
 
-        self.df["time"] = self.df["timepoint"] * time_resolution
+        self.df["time"] = self.df["timepoint"] * self.time_resolution
 
         # Smooth and diff Q1_norm
         self.df["Q1_norm_smooth"] = savgol_smooth(
             self.df["Q1_norm"],
-            window_length=savgol_window_length,
-            polyorder=savgol_polyorder,
+            window_length=self.savgol_window_length,
+            polyorder=self.savgol_polyorder,
         )
         self.df["Q1_norm_smooth_diff"] = self.df["Q1_norm_smooth"].diff()
 
         # Smooth and diff polarity magnitude
         self.df["polarity_magnitude_smooth"] = savgol_smooth(
             self.df["polarity_magnitude"],
-            window_length=savgol_window_length,
-            polyorder=savgol_polyorder,
+            window_length=self.savgol_window_length,
+            polyorder=self.savgol_polyorder,
         )
         self.df["polarity_magnitude_smooth_diff"] = self.df[
             "polarity_magnitude_smooth"
         ].diff()
 
         # Get polarizing phases and measurements
-        calc.get_polarization_phases(self.df, polarity_column, min_phase_length)
-        phases_polarizing = calc.true_phases(self.df, "polarizing", polarity_column)
+        calc.get_polarization_phases(
+            self.df, self.polarity_column, self.min_phase_length
+        )
+        phases_polarizing = calc.true_phases(
+            self.df, "polarizing", self.polarity_column
+        )
         self.cell_measurements.update(
             calc.quantify_phases(phases_polarizing, "polarizing")
         )
 
         # Get stalling phases and measurements
         calc.get_stalling_phases(
-            self.df, polarity_column, min_phase_length, stalling_sigma
+            self.df, self.polarity_column, self.min_phase_length, self.stalling_sigma
         )
-        phases_stalling = calc.true_phases(self.df, "stalling", polarity_column)
+        phases_stalling = calc.true_phases(self.df, "stalling", self.polarity_column)
         self.cell_measurements.update(calc.quantify_phases(phases_stalling, "stalling"))
 
         # Get local extrema and above threshold phases and measurements
-        calc.get_local_extrems(self.df, polarity_column)
+        calc.get_local_extrems(self.df, self.polarity_column)
         calc.get_above_polar_threshold(
-            self.df, polarity_column, min_phase_length, polarity_threshold
+            self.df, self.polarity_column, self.min_phase_length, self.polarity_threshold
         )
 
         ramp_on_phases = calc.get_time_since_local_min_to_polar(
-            self.df, polarity_column
+            self.df, self.polarity_column
         )
         self.cell_measurements.update(
             {
