@@ -338,9 +338,12 @@ class CellSeries:
             **kwargs,
         )
 
-        self.write_measurements(
-            path=figure_path / "cell_data" / f"{self.uid}_{self.name}.csv"
-        )
+        if self.output_dir is not None:
+            csv_path = self.output_dir / "cell_data"
+        else:
+            csv_path = self.path / "figures"
+        csv_path.mkdir(exist_ok=True, parents=True)
+        self.write_measurements(path=csv_path / f"{self.uid}_{self.name}.csv")
 
 
 class CellTimepoint:
