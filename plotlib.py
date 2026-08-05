@@ -36,6 +36,7 @@ def plot_time_series(
     images: dict,
     measurements: pd.DataFrame,
     measuremnt_masks: dict,
+    name: str = "polarity",
     uid: str = "cell_series",
     polarity_column: str = "Q1_norm_smooth",
     **kwargs,
@@ -155,7 +156,7 @@ def plot_time_series(
 
     plt.tight_layout()
     sns.despine()
-    fig.savefig(path / f"{uid}__polarity_time_series.pdf", transparent=True)
+    fig.savefig(path / f"{uid}__{name}_polarity_time_series.pdf", transparent=True)
     # plt.show()
 
 

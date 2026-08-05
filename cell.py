@@ -31,6 +31,7 @@ class CellSeries:
         self.uid = None
         self.condition = condition
         self.path = path
+        self.name = self.path.name
         self.output_dir = (
             Path(output_dir) if isinstance(output_dir, str) else output_dir
         )
@@ -285,6 +286,11 @@ class CellSeries:
         else:
             return hlp.export_data(self.measurements, output_path=path)
 
+    def write_measurements(self, path: Path | str | None = None):
+        self.df.to_csv(
+            path if path is not None else self.path / "cell_measurements.csv"
+        )
+
     def get_cell_measurements(self):
         df = self.df
         self.cell_measurements.update(
@@ -327,8 +333,13 @@ class CellSeries:
             self.df,
             plot_masks,
             uid=str(self.uid),
+            name=self.name,
             polarity_column=self.polarity_column,
             **kwargs,
+        )
+
+        self.write_measurements(
+            path=figure_path / "cell_data" / f"{self.uid}_{self.name}.csv"
         )
 
 
